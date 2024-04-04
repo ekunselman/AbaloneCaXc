@@ -1,0 +1,846 @@
+# The start of the pipeline at demultiplexing
+
+# prior to this, the Abalone-qiime2-processing script details how positive and negative controls were checked
+# see here
+#Part I
+#create directory in gilbert lab analyses and cd
+cd /Volumes/Gilbertlab-Analyses/gilbertProjects2022/AbaloneCaXc
+
+#Part II
+#Import Files
+  qiime tools import \
+  --type EMPPairedEndSequences \
+  --input-path emp-paired-end-sequences \
+  --output-path emp-paired-end-sequences.qza
+#Demultiplex
+  qiime demux emp-paired \
+  --m-barcodes-file abalone_dna_metadata2.txt \
+  --m-barcodes-column BarcodeSequence \
+  --p-rev-comp-barcodes \
+  --p-rev-comp-mapping-barcodes \
+  --i-seqs emp-paired-end-sequences.qza \
+  --o-per-sample-sequences demux.qza \
+  --o-error-correction-details demux-details.qza
+#Visualize and Check sequence quality
+qiime demux summarize \
+  --i-data demux.qza \
+  --o-visualization demux.qzv
+#Join Reads
+  qiime vsearch join-pairs \
+  --i-demultiplexed-seqs demux.qza \
+  --o-joined-sequences demux-paired-joined.qza \
+  --verbose
+#Check Quality
+  qiime demux summarize \
+  --i-data demux-paired-joined.qza \
+  --o-visualization demux-paired-joined.qzv # lost alot of sequences
+#Filter by Q score to remove low quality
+  qiime quality-filter q-score-joined \ # did not end up running this because join pairs did not work very well - lost too mnay sequences
+  --i-demux demux-paired-joined.qza \
+  --o-filtered-sequences demux-paired-joined-filtered.qza \
+  --o-filter-stats demux-paired-joined-filter-stats.qza
+
+#Part III
+#Denoise and cluster to produce biom table with ESVs (exact sequence variants)
+#DADA2
+  # do not use merged reads for dada2, quality filtering is unnecessary
+  # trim to 150 bp but do not remove any from start of sequence because quality is consistent
+  qiime dada2 denoise-paired \
+  --i-demultiplexed-seqs demux.qza \
+  --p-trim-left-f 0 \
+  --p-trim-left-r 0 \
+  --p-trunc-len-f 150 \
+  --p-trunc-len-r 150 \
+  --o-table table.qza \
+  --o-representative-sequences rep-seqs.qza \
+  --o-denoising-stats denoising-stats.qza
+#Visualize new feature table to see how samples look
+  qiime feature-table summarize \
+  --i-table table.qza \
+  --o-visualization table.qzv \
+  --m-sample-metadata-file abalone_dna_metadata2.txt
+#Create visualization for sequences represented across all samples
+  qiime feature-table tabulate-seqs \
+  --i-data rep-seqs.qza \
+  --o-visualization rep-seqs.qzv
+#View denoising stats from dada2
+  qiime metadata tabulate \
+  --m-input-file denoising-stats.qza \
+  --o-visualization denoising-stats.qzv
+#Deblur
+  # did not run this - chose to use DADA2
+
+#Part IV
+#Alpha and Beta Diversity to check controls
+  # sampling depth chosen using interactive sample detail in table qzv. all blanks retained.
+  qiime diversity core-metrics \
+  --i-table table.qza \
+  --p-sampling-depth 3400 \
+  --m-metadata-file abalone_dna_metadata2.txt \
+  --output-dir core-metrics-results-with-controls
+  ## fecal.9.May and fecal.20.May are too closely clustered with PCR/exctraction blanks.
+  ## I will plan to remove these along with the blanks and then re-do the clustering
+
+
+# PART 1 : Pre-processing ---------------------------------------------------------------
+# Demultiplex and Denoise/Cluster after controls and bad samples removed
+  qiime demux emp-paired \
+    --m-barcodes-file abalone_dna_metadata_filtered.txt \
+    --m-barcodes-column BarcodeSequence \
+    --p-rev-comp-barcodes \
+    --p-rev-comp-mapping-barcodes \
+    --i-seqs emp-paired-end-sequences.qza \
+    --o-per-sample-sequences demux.qza \
+    --o-error-correction-details demux-details.qza
+  qiime demux summarize \
+    --i-data demux.qza \
+    --o-visualization demux.qzv
+
+#Join Reads
+  qiime vsearch join-pairs \
+    --i-demultiplexed-seqs demux.qza \
+    --o-joined-sequences demux-paired-joined.qza
+  qiime demux summarize \
+    --i-data demux-paired-joined.qza \
+    --o-visualization demux-paired-joined.qzv
+
+#Filter by Q score to remove low quality
+  qiime quality-filter q-score \
+    --i-demux demux-paired-joined.qza \
+    --o-filtered-sequences demux-paired-joined-filtered.qza \
+    --o-filter-stats demux-paired-joined-filter-stats.qza
+
+# Run DEBLUR (CITE)
+  # deblur performs an initial positive filtering step
+  # where it discards any reads which do not have a minimum 60% identity similarity
+  # to sequences from the 85% OTU GreenGenes database
+  qiime deblur denoise-16S \
+    --i-demultiplexed-seqs demux-paired-joined-filtered.qza \
+    --p-trim-length 150 \
+    --o-representative-sequences rep-seqs-deblur.qza \
+    --o-table table-deblur.qza \
+    --p-sample-stats \
+    --o-stats deblur-stats.qza
+
+# Create deblur taxonomy
+  qiime feature-classifier classify-sklearn \
+    --i-classifier silva-classifier.qza \
+    --i-reads rep-seqs-deblur.qza \
+    --o-classification silva-taxonomy-deblur.qza
+# Visualize taxonomy output
+  qiime metadata tabulate \
+    --m-input-file silva-taxonomy-deblur.qza \
+    --o-visualization silva-taxonomy-deblur.qzv
+# export taxonomy
+  qiime tools export \
+    --input-path silva-taxonomy-deblur.qza \
+    --output-path exported-silva-taxonomy-deblur
+
+# Filter out chloroplast and mitochondria
+  qiime taxa filter-table \
+    --i-table table-deblur.qza \
+    --i-taxonomy silva-taxonomy-deblur.qza \
+    --p-exclude eukaryota,unassigned,mitochondria,chloroplast \
+    --o-filtered-table table-deblur-filt.qza
+  qiime feature-table summarize \
+    --i-table table-deblur-filt.qza \
+    --o-visualization table-deblur-filt.qzv \
+    --m-sample-metadata-file abalone_dna_metadata_filtered.tsv
+
+# Create baseline taxa bar plot
+  qiime taxa barplot \
+    --i-table table-deblur-filt.qza \
+    --i-taxonomy silva-taxonomy-deblur.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization taxa-bar-plot-deblur.qzv
+
+# Generate phylogenetic tree using fragment tree insertion (CITE)
+  qiime fragment-insertion sepp \
+    --i-representative-sequences rep-seqs-deblur.qza \
+    --i-reference-database sepp-refs-gg-13-8.qza \
+    --o-tree insertion-tree-deblur.qza \
+    --o-placements insertion-placements-deblur.qza
+
+# Alpha rarefaction (removed phylogeny here)
+  qiime diversity alpha-rarefaction \
+    --i-table table-deblur-filt.qza \
+    --p-max-depth 200000 \
+    --p-steps 50 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization phylogenetic-alpha-rarefaction-deblur.qzv
+
+# PART 2 : Time Series of Abalone Feces  -----------------------------
+
+cd DEBLUR_ANALYSIS/
+# Filter deblur table to contain only FECAl samples
+  qiime feature-table filter-samples \
+    --i-table  table-deblur-filt.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "sample_type='fecal'" \
+    --o-filtered-table FECAL/table-deblur-fecal.qza
+# Remove "mort" samples from analysis
+  qiime feature-table filter-samples \
+    --i-table FECAL/table-deblur-fecal.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "mort_sacrifice='sacrifice'" \
+    --o-filtered-table FECAL/table-deblur-fecal-survived.qza
+  qiime feature-table summarize \
+    --i-table FECAL/table-deblur-fecal-survived.qza \
+    --m-sample-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization FECAL/table-deblur-fecal-survived.qzv
+
+# Time series analysis with q2-longitudinal
+
+# First, need core metrics results for alpha and beta diversity indices
+# rarefaction depth determined by cutting off abnormally low feature frequency samples
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table FECAL/table-deblur-fecal-survived.qza \
+    --p-sampling-depth 58660 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir FECAL/longitudinal/core-metrics-results
+
+# Alpha Diversity Time series analysis
+    # metric is alpha diversity metric you want to compare
+    # state column is column specificying time across which samples were repeatedly made
+    # state 1 is the baseline state column value (2 for Pos/Neg b/c starts at July, 0 for "timezero")
+    # state 2 is he state column value to pair with the baseline - primary timepoint of interest?
+    # individual id column is the individual's ID (tag/tube id)
+    # group column is the metadata coumn to separate groups by
+    # replicate handling is if replicates are detected (aka more than one sample per tag per time). random chooses one representative from the lot.
+#SHANNON
+  qiime longitudinal pairwise-differences \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --m-metadata-file FECAL/longitudinal/core-metrics-results/shannon_vector.qza \
+    --p-metric shannon_entropy \
+    --p-group-column Treatment \
+    --p-state-column Time \
+    --p-state-1 0 \
+    --p-state-2 11 \
+    --p-individual-id-column tube_id \
+    --p-replicate-handling random \
+    --o-visualization FECAL/longitudinal/pairwise-differences-shannon.qzv
+    # Longitudinal volatility plot - must remove any NAs in state column, this command is very sensitive
+  qiime longitudinal volatility \
+    --m-metadata-file metadata-longitudinal.txt \
+    --m-metadata-file FECAL/longitudinal/core-metrics-results/shannon_vector.qza \
+    --p-default-metric shannon_entropy \
+    --p-default-group-column Treatment \
+    --p-state-column Time \
+    --p-individual-id-column tube_id \
+    --o-visualization FECAL/longitudinal/volatility-shannon.qzv
+#FAITH's PD
+  qiime longitudinal pairwise-differences \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --m-metadata-file FECAL/longitudinal/core-metrics-results/faith_pd_vector.qza \
+    --p-metric faith_pd \
+    --p-group-column Treatment \
+    --p-state-column Time \
+    --p-state-1 0 \
+    --p-state-2 11 \
+    --p-individual-id-column tube_id \
+    --p-replicate-handling random \
+    --o-visualization FECAL/longitudinal/pairwise-differences-faith.qzv
+  # Longitudinal volatility plot - must remove any NAs in state column, this command is very sensitive
+  qiime longitudinal volatility \
+    --m-metadata-file metadata-longitudinal.txt \
+    --m-metadata-file FECAL/longitudinal/core-metrics-results/faith_pd_vector.qza \
+    --p-default-metric faith_pd \
+    --p-default-group-column Treatment \
+    --p-state-column Time \
+    --p-individual-id-column tube_id \
+    --o-visualization FECAL/longitudinal/volatility-faith.qzv
+
+# Does diversity change from beginning to end for both groups?
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity FECAL/longitudinal/core-metrics-results/shannon_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization FECAL/longitudinal/core-metrics-results/shannon_significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity FECAL/longitudinal/core-metrics-results/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization FECAL/longitudinal/core-metrics-results/faith_pd_significance.qzv
+
+# Beta Diversity Time Series Analysis with q2 longituidinal
+    # have to remove any samples that are not included in distance matrix from metadata
+# WEIGHTED UNIFRAC
+  qiime longitudinal pairwise-distances \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file metadata-longitudinal.txt \
+    --p-group-column Treatment \
+    --p-state-column Time \
+    --p-state-1 0 \
+    --p-state-2 11 \
+    --p-individual-id-column tube_id \
+    --p-replicate-handling random \
+    --o-visualization FECAL/longitudinal/pairwise-distances-weightedUnifrac.qzv
+  qiime longitudinal volatility \
+    --m-metadata-file metadata-longitudinal.txt \
+    --m-metadata-file FECAL/longitudinal/core-metrics-results/weighted_unifrac_pcoa_results.qza \
+    --p-default-group-column Treatment \
+    --p-state-column Time \
+    --p-individual-id-column tube_id \
+    --o-visualization FECAL/longitudinal/volatility-weightedUnifrac.qzv
+
+# UNWEIGHTED UNIFRAC
+  qiime longitudinal pairwise-distances \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file metadata-longitudinal.txt \
+    --p-group-column Treatment \
+    --p-state-column Time \
+    --p-state-1 0 \
+    --p-state-2 11 \
+    --p-individual-id-column tube_id \
+    --p-replicate-handling random \
+    --o-visualization FECAL/longitudinal/pairwise-distances-UNweightedUnifrac.qzv
+  qiime longitudinal volatility \
+    --m-metadata-file metadata-longitudinal.txt \
+    --m-metadata-file FECAL/longitudinal/core-metrics-results/unweighted_unifrac_pcoa_results.qza \
+    --p-default-group-column Treatment \
+    --p-state-column Time \
+    --p-individual-id-column tube_id \
+    --o-visualization FECAL/longitudinal/volatility-UNweightedUnifrac.qzv
+
+# Although both groups are changing quite similarly, how do they compar eat the end of the experiment?
+# Filter fecal table to only T =11 samples
+  qiime feature-table filter-samples \
+    --i-table  FECAL/table-deblur-fecal.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "Time='11'" \
+    --o-filtered-table FECAL/table-deblur-fecal-T11.qza
+# Run core metrics on fecal T11
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table FECAL/table-deblur-fecal-T11.qza \
+    --p-sampling-depth 58660 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir FECAL/longitudinal/core-metrics-results-T11
+# Is alpha diversity significantly differetn at T11?
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity FECAL/longitudinal/core-metrics-results-T11/shannon_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T11/shannon_significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity FECAL/longitudinal/core-metrics-results-T11/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T11/faith_pd_significance.qzv
+# Is Beta diversity significantly different at T11?
+  qiime diversity beta-group-significance \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results-T11/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --m-metadata-column Treatment \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T11/unweighted_unifrac_treatment_significance.qzv
+  qiime diversity beta-group-significance \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results-T11/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --m-metadata-column Treatment \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T11/weighted_unifrac_treatment_significance.qzv
+# Run adonis test to compare exposed to control at each timepoint
+  # T0
+  # filter
+  qiime feature-table filter-samples \
+    --i-table  FECAL/table-deblur-fecal.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "Time='0'" \
+    --o-filtered-table FECAL/table-deblur-fecal-T0.qza
+  # Run core metrics on fecal T0
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table FECAL/table-deblur-fecal-T0.qza \
+    --p-sampling-depth 58660 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir FECAL/longitudinal/core-metrics-results-T0
+  # Run adonis significance test
+  qiime diversity adonis \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results-T0/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-formula Treatment \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T0/weighted-unifrac-exposed-adonis.qzv
+  # T2
+  #filter
+  qiime feature-table filter-samples \
+    --i-table  FECAL/table-deblur-fecal.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "Time='2'" \
+    --o-filtered-table FECAL/table-deblur-fecal-T2.qza
+  # Run core metrics on fecal T2
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table FECAL/table-deblur-fecal-T2.qza \
+    --p-sampling-depth 58660 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir FECAL/longitudinal/core-metrics-results-T2
+  # Run adonis significance test
+  qiime diversity adonis \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results-T2/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-formula Treatment \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T2/weighted-unifrac-exposed-adonis.qzv
+  #T5
+  # filter
+  qiime feature-table filter-samples \
+    --i-table  FECAL/table-deblur-fecal.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "Time='5'" \
+    --o-filtered-table FECAL/table-deblur-fecal-T5.qza
+  # Run core metrics on fecal T5
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table FECAL/table-deblur-fecal-T5.qza \
+    --p-sampling-depth 58660 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir FECAL/longitudinal/core-metrics-results-T5
+  # Run adonis significance test
+  qiime diversity adonis \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results-T5/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-formula Treatment \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T5/weighted-unifrac-exposed-adonis.
+  #T7
+  # filter
+  qiime feature-table filter-samples \
+    --i-table  FECAL/table-deblur-fecal.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "Time='7'" \
+    --o-filtered-table FECAL/table-deblur-fecal-T7.qza
+  # Run core metrics on fecal T7
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table FECAL/table-deblur-fecal-T7.qza \
+    --p-sampling-depth 58660 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir FECAL/longitudinal/core-metrics-results-T7
+  # Run adonis significance test
+  qiime diversity adonis \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results-T7/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-formula Treatment \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T7/weighted-unifrac-exposed-adonis.qzv
+  #T8
+  # filter
+  qiime feature-table filter-samples \
+    --i-table  FECAL/table-deblur-fecal.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "Time='8'" \
+    --o-filtered-table FECAL/table-deblur-fecal-T8.qza
+  # Run core metrics on fecal T8
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table FECAL/table-deblur-fecal-T8.qza \
+    --p-sampling-depth 58660 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir FECAL/longitudinal/core-metrics-results-T8
+  # Run adonis significance test
+  qiime diversity adonis \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results-T8/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-formula Treatment \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T8/weighted-unifrac-exposed-adonis.qzv
+  #T10
+  # filter
+  qiime feature-table filter-samples \
+    --i-table  FECAL/table-deblur-fecal.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "Time='10'" \
+    --o-filtered-table FECAL/table-deblur-fecal-T10.qza
+  # Run core metrics on fecal T10
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table FECAL/table-deblur-fecal-T10.qza \
+    --p-sampling-depth 58660 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir FECAL/longitudinal/core-metrics-results-T10
+  # Run adonis significance test
+  qiime diversity adonis \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results-T10/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-formula Treatment \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T10/weighted-unifrac-exposed-adonis.qzv
+  #T11
+  # Run adonis significance test
+  qiime diversity adonis \
+    --i-distance-matrix FECAL/longitudinal/core-metrics-results-T11/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-formula Treatment \
+    --o-visualization FECAL/longitudinal/core-metrics-results-T11/weighted-unifrac-exposed-adonis.qzv
+
+# Feature volatility analysis for all fecal samples: which features change over time?
+    # identify features most important for numeric data column (in this case Time)
+    # will plot relative frequences over time by condition
+    # by adding individual id column, acknowledges time and plots new line for each individual
+        # random state sets seed
+        # number estimators is default (estimator is random forest)
+  qiime longitudinal feature-volatility \
+    --i-table FECAL/table-deblur-fecal-survived.qza \
+    --m-metadata-file metadata-longitudinal.txt \
+    --p-state-column Time \
+    --p-individual-id-column tube_id \
+    --p-n-estimators 10 \
+    --p-random-state 17 \
+    --output-dir FECAL/longitudinal/time-feature-volatility
+
+# Part 3:  Identify Core Features across Samples ------------------------------
+# core features in fecal samples
+qiime feature-table core-features \
+  --i-table FECAL/table-deblur-fecal-survived.qza \
+  --p-min-fraction 0.8 \
+  --p-max-fraction 1.0 \
+  --p-steps 5 \
+  --o-visualization FECAL/core-features-survived.qzv
+
+# Part 4: Comparison of Sample Types ------------------------------------------
+
+# Alpha & Beta diversity comparison between tissue and feces
+    # only take timepoint 11 after abalone have adjusted to conditions
+    # compared to 0 months, community changes alot, and also T11 has paired samples of tissue and fecal
+
+  # filter to T=11
+  qiime feature-table filter-samples \
+    --i-table table-deblur-filt.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "Time ='11'" \
+    --o-filtered-table T11/table-deblur-T11.qza
+
+# Control Abalone
+  # filter to only control samples
+  qiime feature-table filter-samples \
+    --i-table T11/table-deblur-T11.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "Treatment ='Negative'" \
+    --o-filtered-table T11/table-deblur-T11-control.qza
+  # determine rarefaction depth
+  qiime feature-table summarize \
+    --i-table  T11/table-deblur-T11-control.qza \
+    --m-sample-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization  T11/table-deblur-T11-control.qzv
+  qiime diversity alpha-rarefaction \
+    --i-table T11/table-deblur-T11-control.qza \
+    --p-max-depth 200000 \
+    --p-steps 50 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/alpha-rarefaction-deblur-control.qzv
+  # run core metrics (depth chosen removes one sample but captures more of fecal diversity)
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table T11/table-deblur-T11-control.qza \
+    --p-sampling-depth 43246 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir T11/core-metrics-results-T11-control
+  # compare alpha diversity of sample types
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-control/shannon_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-control/shannon-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-control/evenness_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-control/evenness-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-control/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-control/faith-significance.qzv
+    qiime diversity alpha-group-significance \
+      --i-alpha-diversity /Users/emilykunselman/d_abalone_caxc/qiime2/DEBLUR_ANALYSIS/T11/core-metrics-results-T11-control/observed_features_vector.qza \
+      --m-metadata-file /Users/emilykunselman/d_abalone_caxc/qiime2/DEBLUR_ANALYSIS/abalone_dna_metadata_filtered.tsv \
+      --o-visualization /Users/emilykunselman/d_abalone_caxc/qiime2/DEBLUR_ANALYSIS/T11/core-metrics-results-T11-control/observed_richness_significance.qzv
+  # run pairwise permanova on sample type for beta diversity
+  qiime diversity beta-group-significance \
+    --i-distance-matrix T11/core-metrics-results-T11-control/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --m-metadata-column sample_type_2 \
+    --o-visualization T11/core-metrics-results-T11-control/unweighted-unifrac-sampletype-significance.qzv \
+    --p-pairwise
+  qiime diversity beta-group-significance \
+    --i-distance-matrix T11/core-metrics-results-T11-control/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --m-metadata-column sample_type_2 \
+    --o-visualization T11/core-metrics-results-T11-control/weighted-unifrac-sampletype-significance.qzv \
+    --p-pairwise
+
+# Exposed Abalone
+  # filter to only exposed samples
+  qiime feature-table filter-samples \
+    --i-table T11/table-deblur-T11.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "Treatment ='Positive'" \
+    --o-filtered-table T11/table-deblur-T11-exposed.qza
+  # determine rarefaction depth
+  qiime feature-table summarize \
+    --i-table  T11/table-deblur-T11-exposed.qza \
+    --m-sample-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization  T11/table-deblur-T11-exposed.qzv
+  qiime diversity alpha-rarefaction \
+    --i-table T11/table-deblur-T11-exposed.qza \
+    --p-max-depth 200000 \
+    --p-steps 50 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/alpha-rarefaction-deblur-exposed.qzv
+  # run core metrics (sampling depth sacrifices two ottom samples for higher fecal diversity)
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table T11/table-deblur-T11-exposed.qza \
+    --p-sampling-depth 28738 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir T11/core-metrics-results-T11-exposed
+  # compare alpha diversity of sample types
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-exposed/shannon_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-exposed/shannon-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-exposed/evenness_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-exposed/evenness-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-exposed/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-exposed/faith-significance.qzv
+  # rurun pairwise permanova on sample type for beta diversity
+  qiime diversity beta-group-significance \
+    --i-distance-matrix T11/core-metrics-results-T11-exposed/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --m-metadata-column sample_type_2 \
+    --o-visualization T11/core-metrics-results-T11-exposed/unweighted-unifrac-sampletype-significance.qzv \
+    --p-pairwise
+  qiime diversity beta-group-significance \
+    --i-distance-matrix T11/core-metrics-results-T11-exposed/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --m-metadata-column sample_type_2 \
+    --o-visualization T11/core-metrics-results-T11-exposed/weighted-unifrac-sampletype-significance.qzv \
+    --p-pairwise
+
+# conclusion: weighted unifrac - PE and DG overlap in control, GC and DI overlap in control
+# but in exposed, all sample types diverge from one another
+
+# Altogether, how much variation is explained by sample type vs exposed?
+
+  # core diversity metrics on both control and exposed
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table T11/table-deblur-T11.qza \
+    --p-sampling-depth 28738 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir T11/core-metrics-results-T11
+  # test for interaction and significance of each variable
+  qiime diversity adonis \
+  --i-distance-matrix T11/core-metrics-results-T11/weighted_unifrac_distance_matrix.qza \
+  --m-metadata-file abalone_dna_metadata_filtered.tsv \
+  --p-formula sample_type_2*Treatment \
+  --o-visualization T11/core-metrics-results-T11/weighted-unifrac-adonis.qzv
+  # does treatment effect depend on sample type? YES
+    # sample type explains the majority of difference (33%), while exposure explains 7%,
+    # and this effect of treatment depends on sample type, so need to separate sample types to test treatment
+
+# Part 4: Comparison of Exposed to Control Abalone ------------------------------------------
+
+# I will be looking at each individual tissue type on its own,
+# because beta diversity shows tissues tend to differentiate, especially in exposed
+# Tissue are focused on here because you cna already see what is happenign in fecal sampels from Fig 1
+
+# Show Taxonomy plot to express dominance of CaXc in PE
+# filter T11 table to only include tissue samples
+  qiime feature-table filter-samples \
+    --i-table T11/table-deblur-T11.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "sample_type ='fecal'" \
+    --p-exclude-ids \
+    --o-filtered-table T11/table-deblur-T11-tissue.qza
+  # generate taxa barplot
+  qiime taxa barplot \
+    --i-table T11/table-deblur-T11-tissue.qza \
+    --i-taxonomy silva-taxonomy-deblur.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization taxa-bar-plot-deblur-tissue.qzv
+
+# check tissue table for sequence counts
+qiime feature-table summarize \
+  --i-table  T11/table-deblur-T11-tissue.qza \
+  --m-sample-metadata-file abalone_dna_metadata_filtered.tsv \
+  --o-visualization  T11/table-deblur-T11-tissue.qzv
+
+# Post Esophagus   (PE)
+# filter to retain onle PE samples from 11 months
+  qiime feature-table filter-samples \
+    --i-table T11/table-deblur-T11.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "sample_type_2 ='PE'" \
+    --o-filtered-table T11/table-deblur-T11-PE.qza
+  qiime diversity alpha-rarefaction \
+    --i-table T11/table-deblur-T11-tissue.qza \
+    --p-max-depth 50000 \
+    --p-steps 25 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/alpha-rarefaction-deblur-tissue.qzv
+# Core Metrics for alpha and beta diversity (sampling depth based on samples on lower end of sequence counts and amount of diversity captured)
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table T11/table-deblur-T11-PE.qza \
+    --p-sampling-depth 28738 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir T11/core-metrics-results-T11-PE
+  # compare alpha diversity of sample types
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-PE/shannon_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-PE/shannon-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-PE/evenness_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-PE/evenness-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-PE/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-PE/faith-significance.qzv
+    #test faith's PD against copy number
+    #spearman for monotonic relationship
+  qiime diversity alpha-correlation \
+    --i-alpha-diversity T11/core-metrics-results-T11-PE/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-method spearman \
+    --o-visualization T11/core-metrics-results-T11-PE/faith_pd-correlation.qzv
+  # run adonis on treatment to determine amoutn explain by treatment and p val
+  qiime diversity adonis \
+    --i-distance-matrix T11/core-metrics-results-T11-PE/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-formula Treatment \
+    --o-visualization T11/core-metrics-results-T11-PE/unweighted_unifrac-exposed-significance.qzv
+
+# Digestive Gland   (DG)
+# filter to retain onle DG samples from 11 months
+  qiime feature-table filter-samples \
+    --i-table T11/table-deblur-T11.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "sample_type_2 ='DG'" \
+    --o-filtered-table T11/table-deblur-T11-DG.qza
+# Core Metrics for alpha and beta diversity (sampling depth based on samples on lower end of sequence counts and amount of diversity captured)
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table T11/table-deblur-T11-DG.qza \
+    --p-sampling-depth 28738 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir T11/core-metrics-results-T11-DG
+  # compare alpha diversity of sample types
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-DG/shannon_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-DG/shannon-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-DG/evenness_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-DG/evenness-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-DG/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-DG/faith-significance.qzv
+  #test faith's PD against copy number
+  #spearman for monotonic relationship
+qiime diversity alpha-correlation \
+  --i-alpha-diversity T11/core-metrics-results-T11-DG/faith_pd_vector.qza \
+  --m-metadata-file abalone_dna_metadata_filtered.tsv \
+  --p-method spearman \
+  --o-visualization T11/core-metrics-results-T11-DG/faith_pd-correlation.qzv
+# run adonis on treatment to determine amoutn explain by treatment and p val
+qiime diversity adonis \
+  --i-distance-matrix T11/core-metrics-results-T11-DG/unweighted_unifrac_distance_matrix.qza \
+  --m-metadata-file abalone_dna_metadata_filtered.tsv \
+  --p-formula Treatment \
+  --o-visualization T11/core-metrics-results-T11-DG/unweighted_unifrac-exposed-significance.qzv
+
+# Distal intestine   (DI)
+# filter to retain onle DI samples from 11 months
+  qiime feature-table filter-samples \
+    --i-table T11/table-deblur-T11.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "sample_type_2 ='DI'" \
+    --o-filtered-table T11/table-deblur-T11-DI.qza
+# Core Metrics for alpha and beta diversity (sampling depth based on samples on lower end of sequence counts and amount of diversity captured)
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table T11/table-deblur-T11-DI.qza \
+    --p-sampling-depth 28738 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir T11/core-metrics-results-T11-DI
+  # compare alpha diversity of sample types
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-DI/shannon_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-DI/shannon-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-DI/evenness_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-DI/evenness-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-DI/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-DI/faith-significance.qzv
+  qiime diversity alpha-correlation \
+    --i-alpha-diversity T11/core-metrics-results-T11-DI/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-method spearman \
+    --o-visualization T11/core-metrics-results-T11-DI/faith_pd-correlation.qzv
+  # run adonis on treatment to determine amoutn explain by treatment and p val
+  qiime diversity adonis \
+    --i-distance-matrix T11/core-metrics-results-T11-DI/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-formula Treatment \
+    --o-visualization T11/core-metrics-results-T11-DI/unweighted_unifrac-exposed-significance.qzv
+
+# Gut contents   (GC)
+# filter to retain only GC samples from 11 months
+  qiime feature-table filter-samples \
+    --i-table T11/table-deblur-T11.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-where "sample_type_2 ='GC'" \
+    --o-filtered-table T11/table-deblur-T11-GC.qza
+# Core Metrics for alpha and beta diversity (sampling depth based on samples on lower end of sequence counts and amount of diversity captured)
+  qiime diversity core-metrics-phylogenetic \
+    --i-phylogeny insertion-tree-deblur.qza \
+    --i-table T11/table-deblur-T11-GC.qza \
+    --p-sampling-depth 28738 \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --output-dir T11/core-metrics-results-T11-GC
+  # compare alpha diversity of sample types
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-GC/shannon_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-GC/shannon-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-GC/evenness_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-GC/evenness-significance.qzv
+  qiime diversity alpha-group-significance \
+    --i-alpha-diversity T11/core-metrics-results-T11-GC/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --o-visualization T11/core-metrics-results-T11-GC/faith-significance.qzv
+  # run pairwise permanova on sample type for beta diversity
+  qiime diversity beta-group-significance \
+    --i-distance-matrix T11/core-metrics-results-T11-GC/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --m-metadata-column Treatment \
+    --o-visualization T11/core-metrics-results-T11-GC/unweighted-unifrac-exposed-significance.qzv
+  qiime diversity beta-group-significance \
+    --i-distance-matrix T11/core-metrics-results-T11-GC/weighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --m-metadata-column Treatment \
+    --o-visualization T11/core-metrics-results-T11-GC/weighted-unifrac-exposed-significance.qzv
+  qiime diversity alpha-correlation \
+    --i-alpha-diversity T11/core-metrics-results-T11-GC/faith_pd_vector.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-method spearman \
+    --o-visualization T11/core-metrics-results-T11-GC/faith_pd-correlation.qzv
+  # run adonis on treatment to determine amoutn explain by treatment and p val
+  qiime diversity adonis \
+    --i-distance-matrix T11/core-metrics-results-T11-GC/unweighted_unifrac_distance_matrix.qza \
+    --m-metadata-file abalone_dna_metadata_filtered.tsv \
+    --p-formula Treatment \
+    --o-visualization T11/core-metrics-results-T11-GC/unweighted_unifrac-exposed-significance.qzv
+
+# Simon's volatility density plots
+qiime tools export \
+  --input-path FECAL/longitudinal/core-metrics-results/weighted_unifrac_distance_matrix.qza \
+  --output-path FECAL/longitudinal/exported-weighted-unifrac-distances
+
+
+# Upload to NCBI SRA -----------------
+# use ftp in FileZilla to transfer files
+# 2 fecal May (#20 and 9) files not included because of some weird error

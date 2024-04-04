@@ -1,0 +1,474 @@
+# RNA sequencing - de novo transcriptome assembly and gene expression analysis
+
+# First, trim sequences
+# move raw files over to scratch space
+_____________________________
+# FASTP for trimming adaptors, polyX sequence and tail removal, removing sequence lengths below 50 bp, cross check forward and reverse reads and remove unmatching, remove low quality reads (under 15 or 20 Q score)
+
+# unzip raw sequence files
+gunzip ABWS_40_S45_L002_R1_001.fastq.gz ABWS_40_S45_L002_R2_001.fastq.gz \
+ABWS_38_S43_L002_R1_001.fastq.gz ABWS_38_S43_L002_R2_001.fastq.gz \
+ABWS_34_S39_L002_R1_001.fastq.gz ABWS_34_S39_L002_R2_001.fastq.gz \
+ABWS_28_S34_L002_R1_001.fastq.gz ABWS_28_S34_L002_R2_001.fastq.gz \
+ABWS_23_S29_L002_R1_001.fastq.gz ABWS_23_S29_L002_R2_001.fastq.gz \
+ABWS_20_S26_L002_R1_001.fastq.gz ABWS_20_S26_L002_R2_001.fastq.gz \
+ABWS_19_S25_L002_R1_001.fastq.gz ABWS_19_S25_L002_R2_001.fastq.gz \
+ABWS_16_S22_L002_R1_001.fastq.gz ABWS_16_S22_L002_R2_001.fastq.gz \
+ABWS_11_S19_L002_R1_001.fastq.gz ABWS_11_S19_L002_R2_001.fastq.gz
+
+gunzip ABC_9_S17_L002_R1_001.fastq.gz ABC_9_S17_L002_R2_001.fastq.gz \
+ABC_8_S16_L002_R1_001.fastq.gz ABC_8_S16_L002_R2_001.fastq.gz \
+ABC_7_S15_L002_R1_001.fastq.gz ABC_7_S15_L002_R2_001.fastq.gz \
+ABC_6_S14_L002_R1_001.fastq.gz ABC_6_S14_L002_R2_001.fastq.gz \
+ABC_37_S42_L002_R1_001.fastq.gz ABC_37_S42_L002_R2_001.fastq.gz \
+ABC_36_S41_L002_R1_001.fastq.gz ABC_36_S41_L002_R2_001.fastq.gz \
+ABC_26_S32_L002_R1_001.fastq.gz ABC_26_S32_L002_R2_001.fastq.gz \
+ABC_25_S31_L002_R1_001.fastq.gz ABC_25_S31_L002_R2_001.fastq.gz \
+ABC_24_S30_L002_R1_001.fastq.gz ABC_24_S30_L002_R2_001.fastq.gz \
+ABC_10_S18_L002_R1_001.fastq.gz ABC_10_S18_L002_R2_001.fastq.gz
+
+# fast p parameters
+# --trim_poly_x remove any other polyT/C etc that was not covered by default polyG removal (poly G is sequencing artifact which happens when sequences are too short the sequencer will just trnacribe it as G)
+# --low_complexity_filter (this was necessary to remove the polyA sequences because they are clearly not complex when repeating A for over 10 bp)
+# --length_required 50 ( with the trimming, I found that some sequences are not shorter, so want at least 50 because this seems like a reasonable cutoff)
+# -h specify name of output html so that it is unique to each sample
+# fastp only seems to work with unzipped files unless i just missed a parameter in there
+# phred33 for quality is default
+
+conda install -c bioconda fastp
+
+fastp -i ABWS_39_S44_L002_R1_001.fastq -I ABWS_39_S44_L002_R2_001.fastq -o ABWS_39_forward_paired.fq.gz -O ABWS_39_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABWS_40_S45_L002_R1_001.fastq -I ABWS_40_S45_L002_R2_001.fastq -o ABWS_40_forward_paired.fq.gz -O ABWS_40_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABWS_38_S43_L002_R1_001.fastq -I ABWS_38_S43_L002_R2_001.fastq -o ABWS_38_forward_paired.fq.gz -O ABWS_38_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABWS_34_S39_L002_R1_001.fastq -I ABWS_34_S39_L002_R2_001.fastq -o ABWS_34_forward_paired.fq.gz -O ABWS_34_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABWS_28_S34_L002_R1_001.fastq -I ABWS_28_S34_L002_R2_001.fastq -o ABWS_28_forward_paired.fq.gz -O ABWS_28_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABWS_23_S29_L002_R1_001.fastq -I ABWS_23_S29_L002_R2_001.fastq -o ABWS_23_forward_paired.fq.gz -O ABWS_23_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABWS_20_S26_L002_R1_001.fastq -I ABWS_20_S26_L002_R2_001.fastq -o ABWS_20_forward_paired.fq.gz -O ABWS_20_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABWS_19_S25_L002_R1_001.fastq -I ABWS_19_S25_L002_R2_001.fastq -o ABWS_19_forward_paired.fq.gz -O ABWS_19_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABWS_16_S22_L002_R1_001.fastq -I ABWS_16_S22_L002_R2_001.fastq -o ABWS_16_forward_paired.fq.gz -O ABWS_16_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABWS_11_S19_L002_R1_001.fastq -I ABWS_11_S19_L002_R2_001.fastq -o ABWS_11_forward_paired.fq.gz -O ABWS_11_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+
+fastp -i ABC_9_S17_L002_R1_001.fastq -I ABC_9_S17_L002_R2_001.fastq -o ABC_9_forward_paired.fq.gz -O ABC_9_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABC_8_S16_L002_R1_001.fastq -I ABC_8_S16_L002_R2_001.fastq -o ABC_8_forward_paired.fq.gz -O ABC_8_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABC_7_S15_L002_R1_001.fastq -I ABC_7_S15_L002_R2_001.fastq -o ABC_7_forward_paired.fq.gz -O ABC_7_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABC_6_S14_L002_R1_001.fastq -I ABC_6_S14_L002_R2_001.fastq -o ABC_6_forward_paired.fq.gz -O ABC_6_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABC_37_S42_L002_R1_001.fastq -I ABC_37_S42_L002_R2_001.fastq -o ABC_37_forward_paired.fq.gz -O ABC_37_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABC_36_S41_L002_R1_001.fastq -I ABC_36_S41_L002_R2_001.fastq -o ABC_36_forward_paired.fq.gz -O ABC_36_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABC_26_S32_L002_R1_001.fastq -I ABC_26_S32_L002_R2_001.fastq -o ABC_26_forward_paired.fq.gz -O ABC_26_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABC_25_S31_L002_R1_001.fastq -I ABC_25_S31_L002_R2_001.fastq -o ABC_25_forward_paired.fq.gz -O ABC_25_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABC_24_S30_L002_R1_001.fastq -I ABC_24_S30_L002_R2_001.fastq -o ABC_24_forward_paired.fq.gz -O ABC_24_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+fastp -i ABC_10_S18_L002_R1_001.fastq -I ABC_10_S18_L002_R2_001.fastq -o ABC_10_forward_paired.fq.gz -O ABC_10_reverse_paired.fq.gz --trim_poly_x --low_complexity_filter --length_required 50 -h report_fastp_ABWS39.html
+
+# save files to analysis directory on gilbert lab node
+_______________________________
+# check files by running fastqc
+#FASTQC
+module load fastqc/0.11.8
+fastqc raw_files/ABWS_40_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_40_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_39_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_39_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_38_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_38_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_34_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_34_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_28_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_28_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_23_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_23_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_20_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_20_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_19_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_19_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_16_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_16_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_11_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABWS_11_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+
+fastqc raw_files/ABC_9_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_9_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_8_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_8_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_7_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_7_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_6_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_6_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_37_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_37_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_36_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_36_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_26_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_26_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_25_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_25_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_24_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_24_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_10_forward_paired.fq.gz -d . -o fastqc_from_fastp/
+fastqc raw_files/ABC_10_reverse_paired.fq.gz -d . -o fastqc_from_fastp/
+
+# save files to analysis directory on gilbert lab node
+_______________________________
+#TRINITY
+# run trinity on just subset of data (only control and exposed from PE and DG - remove time zero and DI samples)
+# run qsub qsub.trinity2
+conda create -n trinity
+conda update -n base -c defaults conda
+conda activate trinity
+conda install -c bioconda trinity bowtie2
+
+#!/bin/bash
+
+#PBS -N trinity2
+#PBS -l walltime=10:00:00:00 (took about 6 days)
+#PBS -l nodes=1:ppn=20
+#PBS -M ekunselm@ucsd.edu
+#PBS -m abe
+#PBS -q home-gilbert
+
+cd /oasis/tscc/scratch/ekunselm/
+
+source /home/ekunselm/anaconda3/etc/profile.d/conda.sh
+
+conda activate trinity
+
+cd AbaloneRNAseq/raw_files/
+
+Trinity --seqType fq \
+--left ABWS_40_forward_paired.fq.gz,ABWS_39_forward_paired.fq.gz,ABWS_38_forward_paired.fq.gz,ABWS_34_forward_paired.fq.gz,ABWS_28_forward_paired.fq.gz,ABWS_23_forward_paired.fq.gz,ABWS_20_forward_paired.fq.gz,ABWS_19_forward_paired.fq.gz,ABWS_16_forward_paired.fq.gz,ABWS_11_forward_paired.fq.gz,ABC_9_forward_paired.fq.gz,ABC_8_forward_paired.fq.gz,ABC_7_forward_paired.fq.gz,ABC_6_forward_paired.fq.gz,ABC_37_forward_paired.fq.gz,ABC_36_forward_paired.fq.gz,ABC_26_forward_paired.fq.gz,ABC_25_forward_paired.fq.gz,ABC_24_forward_paired.fq.gz,ABC_10_forward_paired.fq.gz \
+--right ABWS_40_reverse_paired.fq.gz,ABWS_39_reverse_paired.fq.gz,ABWS_38_reverse_paired.fq.gz,ABWS_34_reverse_paired.fq.gz,ABWS_28_reverse_paired.fq.gz,ABWS_23_reverse_paired.fq.gz,ABWS_20_reverse_paired.fq.gz,ABWS_19_reverse_paired.fq.gz,ABWS_16_reverse_paired.fq.gz,ABWS_11_reverse_paired.fq.gz,ABC_9_reverse_paired.fq.gz,ABC_8_reverse_paired.fq.gz,ABC_7_reverse_paired.fq.gz,ABC_6_reverse_paired.fq.gz,ABC_37_reverse_paired.fq.gz,ABC_36_reverse_paired.fq.gz,ABC_26_reverse_paired.fq.gz,ABC_25_reverse_paired.fq.gz,ABC_24_reverse_paired.fq.gz,ABC_10_reverse_paired.fq.gz \
+--SS_lib_type RF \
+--CPU 6 \
+--max_memory 50G \
+--output trinity_out_PE_DG_T11
+
+# output is in trinity_out_PE_DG_T11, Trinity.fasta
+# transfer output file and output directory to SIO storage
+
+# check out Trinity stats
+conda activate trinity
+TrinityStats.pl trinity_out_PE_DG_T11/Trinity.fasta
+
+Total trinity 'genes':	737166
+Total trinity transcripts:	1137019
+Percent GC: 42.39
+
+########################################
+Stats based on ALL transcript contigs:
+########################################
+
+	Contig N10: 5189
+	Contig N20: 3162
+	Contig N30: 2093
+	Contig N40: 1405
+	Contig N50: 956
+
+	Median contig length: 395
+	Average contig: 686.77
+	Total assembled bases: 780869666
+
+
+#####################################################
+## Stats based on ONLY LONGEST ISOFORM per 'GENE':
+#####################################################
+
+	Contig N10: 3417
+	Contig N20: 1922
+	Contig N30: 1211
+	Contig N40: 849
+	Contig N50: 637
+
+	Median contig length: 348
+	Average contig: 542.84
+	Total assembled bases: 400162902
+
+___________________________________
+# Estimate abundance of transcripts
+  # normalizing for depth of sequencing and the length of transcripts
+  # Fragments Per Kilobase of target transcript length per Million reads mapped (FPKM)
+  # RSEM (RNA-Seq by Expectation-Maximization)
+  # first aligns the RNA-Seq reads to the Trinity transcripts using the Bowtie aligner, and then performs abundance estimation
+
+# run on each sample separately
+# from /raw_files directory
+conda activate trinity
+# had to install rsem
+conda install -c bioconda rsem
+rsem-calculate-expression --version
+
+#!/bin/bash
+
+#PBS -N fastqc
+#PBS -l walltime=72:00:00
+#PBS -l nodes=1:ppn=20
+#PBS -M ekunselm@ucsd.edu
+#PBS -m abe
+#PBS -q home-gilbert
+
+cd /oasis/tscc/scratch/ekunselm/
+
+source /home/ekunselm/anaconda3/etc/profile.d/conda.sh
+
+conda activate trinity
+
+cd AbaloneRNAseq/raw_files/
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABWS_40_forward_paired.fq.gz --right ABWS_40_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABWS40.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABWS_39_forward_paired.fq.gz --right ABWS_39_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABWS39.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABWS_38_forward_paired.fq.gz --right ABWS_38_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABWS38.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABWS_34_forward_paired.fq.gz --right ABWS_34_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABWS34.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABWS_28_forward_paired.fq.gz --right ABWS_28_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABWS28.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABWS_23_forward_paired.fq.gz --right ABWS_23_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABWS23.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABWS_20_forward_paired.fq.gz --right ABWS_20_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABWS20.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABWS_19_forward_paired.fq.gz --right ABWS_19_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABWS19.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABWS_16_forward_paired.fq.gz --right ABWS_16_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABWS16.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABWS_11_forward_paired.fq.gz --right ABWS_11_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABWS11.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABC_9_forward_paired.fq.gz --right ABC_9_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABC9.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABC_8_forward_paired.fq.gz --right ABC_8_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABC8.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABC_7_forward_paired.fq.gz --right ABC_7_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABC7.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABC_6_forward_paired.fq.gz --right ABC_6_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABC6.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABC_37_forward_paired.fq.gz --right ABC_37_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABC37.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABC_36_forward_paired.fq.gz --right ABC_36_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABC36.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABC_26_forward_paired.fq.gz --right ABC_26_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABC26.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABC_25_forward_paired.fq.gz --right ABC_25_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABC25.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABC_24_forward_paired.fq.gz --right ABC_24_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABC24.RSEM
+
+align_and_estimate_abundance.pl --seqType fq  \
+--left ABC_10_forward_paired.fq.gz  --right ABC_10_reverse_paired.fq.gz \
+--transcripts trinity_out_PE_DG_T11/Trinity.fasta \
+--est_method RSEM  --aln_method bowtie \
+--trinity_mode --prep_reference --output_dir ABC10.RSEM
+
+  # check head of *.isoforms.results files within each of their respective directories
+
+______________________
+# Create Counts Matrix
+conda activate trinity
+
+# apparently need edgeR for this
+module load r/4.1.1-4ybbmwt
+if (!require("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("locfit")
+BiocManager::install("edgeR")
+
+# now generate counts matrix
+abundance_estimates_to_matrix.pl --est_method RSEM \
+--out_prefix Trinity_trans \
+--gene_trans_map trinity_out_PE_DG_T11/Trinity.fasta.gene_trans_map \
+RSEM/ABC10.RSEM/ABC10.RSEM.isoforms.results \
+RSEM/ABC24.RSEM/ABC24.RSEM.isoforms.results \
+RSEM/ABC25.RSEM/ABC25.RSEM.isoforms.results \
+RSEM/ABC26.RSEM/ABC26.RSEM.isoforms.results \
+RSEM/ABC36.RSEM/ABC36.RSEM.isoforms.results \
+RSEM/ABC37.RSEM/ABC37.RSEM.isoforms.results \
+RSEM/ABC6.RSEM/ABC6.RSEM.isoforms.results \
+RSEM/ABC7.RSEM/ABC7.RSEM.isoforms.results \
+RSEM/ABC8.RSEM/ABC8.RSEM.isoforms.results \
+RSEM/ABC9.RSEM/ABC9.RSEM.isoforms.results \
+RSEM/ABWS11.RSEM/ABWS11.RSEM.isoforms.results \
+RSEM/ABWS16.RSEM/ABWS16.RSEM.isoforms.results \
+RSEM/ABWS19.RSEM/ABWS19.RSEM.isoforms.results \
+RSEM/ABWS20.RSEM/ABWS20.RSEM.isoforms.results \
+RSEM/ABWS23.RSEM/ABWS23.RSEM.isoforms.results \
+RSEM/ABWS28.RSEM/ABWS28.RSEM.isoforms.results \
+RSEM/ABWS34.RSEM/ABWS34.RSEM.isoforms.results \
+RSEM/ABWS38.RSEM/ABWS38.RSEM.isoforms.results \
+RSEM/ABWS39.RSEM/ABWS39.RSEM.isoforms.results \
+RSEM/ABWS40.RSEM/ABWS40.RSEM.isoforms.results
+
+# output is Trinity_trans.counts.matrix
+# also get TMM normalized matrices
+
+_______________________________
+
+
+_______________________________
+# Functional Annotation to resolve identity of differentially expressed genes
+#https://github.com/Trinotate/Trinotate/wiki/Software-installation-and-data-required
+
+
+
+# 1) Download
+
+# download trinotate
+#1) download tar.gz file from website
+Trinotate-Trinotate-v4.0.2.tar.gz
+#2) add it to necessary directory
+scp Trinotate-Trinotate-v4.0.2.tar.gz ekunselm@login.tscc.sdsc.edu:/tscc/lustre/scratch/ekunselm
+#3) Extract the tarball
+tar zxvf Trinotate-Trinotate-v4.0.2.tar.gz
+# move to home
+scp Trinotate-Trinotate-v4.0.2.tar.gz ekunselm@login.tscc.sdsc.edu:/tscc/projects/ps-gilbertlab/ekunselm_abalone/
+# re-extract
+
+
+# download transdecoder tar.gz: https://github.com/TransDecoder/TransDecoder/releases
+# copy to home because scratch mkdir not working
+scp TransDecoder-TransDecoder-v5.7.1.tar.gz ekunselm@login.tscc.sdsc.edu:/tscc/projects/ps-gilbertlab/ekunselm_abalone/
+# Extract the tarball
+tar zxvf TransDecoder-TransDecoder-v5.7.1.tar.gz
+
+# download SQlite
+# copy to home
+scp sqlite-autoconf-3450100.tar.gz ekunselm@login.tscc.sdsc.edu:/tscc/projects/ps-gilbertlab/ekunselm_abalone/
+# extract
+tar zxvf sqlite-autoconf-3450100.tar.gz
+
+# download NCBI
+# copy to homepage
+scp ncbi-blast-2.15.0+-x64-linux.tar.gz ekunselm@login.tscc.sdsc.edu:/tscc/projects/ps-gilbertlab/ekunselm_abalone/
+# extract
+tar zxvpf ncbi-blast-2.15.0+-x64-linux.tar.gz
+
+# download hmmer/pfam
+scp hmmer.tar.gz ekunselm@login.tscc.sdsc.edu:/tscc/projects/ps-gilbertlab/ekunselm_abalone/
+tar zxvf hmmer.tar.gz
+
+# ACTIVATE Trinity
+conda activate trinity
+
+# 2) Sequence databases required:
+
+Trinotate-Trinotate-v4.0.2/Trinotate --create \
+--db myTrinotate.sqlite \
+--trinotate_data_dir TRINOTATE_DATA_DIR
+
+#The following inputs are required for Trinotate:
+
+#transcripts.fasta : your target transcriptome in fasta format
+#coding_seqs.pep : coding regions translated in fasta format (Most use TransDecoder to generate this)
+#gene_to_trans_map.tsv : pairwise mappings between gene and transcript isoform identifiers
+
+# 3) Initialize your Trinotate sqlite databse
+# Run TransDecoder to _____ and get output file "coding_seqs.pep"
+# identifies candidate coding regions within transcript sequences
+# applied to an entire transcriptome
+# requires
+curl -L https://cpanmin.us | perl - App::cpanminus
+cpanm install DB_File
+cpanm install URI::Escape
+# extract Long Orfs
+TransDecoder.LongOrfs -t Trinity.fasta
+#predict likely coding regions
+TransDecoder.Predict -t Trinity.fasta
+# A working directory (ex. transcripts.transdecoder_dir/) is created
+# the final outputs are reported in your current working directory
+
+# Run init
+  # with the transcripts.fasta and gene_to_trans_map.tsv, which are the final products of running Trinity
+  # coding_seqs.pep is derived from running TransDecoder
+Trinotate-Trinotate-v4.0.2/Trinotate --db myTrinotate.sqlite --init \
+--gene_trans_map Trinity.fasta.gene_trans_map \
+--transcript_fasta Trinity.fasta \
+--transdecoder_pep Trinity.fasta.transdecoder.pep
+
+# 4) Run Sequence Analysis
+# run minimum
+# use sbatch job
+
+Trinotate-Trinotate-v4.0.2/Trinotate --db myTrinotate.sqlite \
+--transcript_fasta Trinity.fasta \
+--transdecoder_pep Trinity.fasta.transdecoder.pep \
+--trinotate_data_dir TRINOTATE_DATA_DIR \
+--run "swissprot_blastp swissprot_blastx pfam"
+
+#285998
+
+
+# 5) Generate Trinonate annotation report
+Trinotate-Trinotate-v4.0.2/Trinotate --db myTrinotate.sqlite --report > myTrinotate.tsv
